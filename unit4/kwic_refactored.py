@@ -37,6 +37,11 @@ class Line:
     def get_word(self, index: int) -> str:
         return self.storage[index]
 
+    def get_shifted_word(self, first_word_index: int, index: int) -> str:
+        line_size = len(self.storage)
+        shift_index = ((first_word_index + index) % line_size)
+        return self.storage[shift_index]
+
 
 class IndexLinePair:
     def __init__(self, index: int, line: Line):
@@ -133,7 +138,7 @@ def cs_setup() -> None:
             circ_index.add(line_idx, word_idx)
 
             
-alph_index = Index()
+alph_index = None
 
 
 def alphabetize() -> None:
@@ -145,10 +150,7 @@ def alphabetize() -> None:
         first_word_idx = shift.get_word_idx()
 
         line = lines.get_line(line_idx)
-        line_size = line.get_size()
-
-        shift_idx = ((first_word_idx + word_idx) % line_size)
-        return line.get_word(shift_idx)
+        return line.get_shifted_word(first_word_idx, word_idx)
     
       def cswords(shift: LineIdxWordIdxPair, lines: LineStorage) -> int:
         line_idx = shift.get_line_idx()
@@ -186,7 +188,7 @@ def print_all_alph_cs_lines() -> None:
         line = lines.get_line(line_idx)
         line_size = line.get_size()
 
-        return [line.get_word((i + first_word_idx) % line_size) for i in range(line_size)]
+        return [line.get_shifted_word(first_word_idx, i) for i in range(line_size)]
     
     for shift in alph_index:
         print(csline(shift, line_storage))
