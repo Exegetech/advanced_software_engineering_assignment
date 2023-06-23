@@ -75,6 +75,40 @@ class LineStorage:
     def get_line(self, index: int) -> Line:
         return self.storage[index]
 
+
+class LineIdxWordIdxPair:
+    def __init__(self, line_idx: int, word_idx: int):
+        self.line_idx = line_idx
+        self.word_idx = word_idx
+
+    def get_line_idx(self) -> int:
+        return self.line_idx
+
+    def get_word_idx(self) -> int:
+        return self.word_idx
+
+
+class Index:
+    def __init__(self):
+        self.storage = []
+
+    def add(self, line_idx: int, word_idx: int):
+        pair = LineIdxWordIdxPair(line_idx, word_idx)
+        self.storage.append(pair)
+
+    def __iter__(self) -> Index:
+        self.index = 0
+        return self
+
+    def __next__(self) -> LineIdxWordIdxPair:
+        if self.index < len(self.storage):
+            index = self.index
+            pair = self.storage[index]
+            self.index += 1
+            return pair
+        else:
+            raise StopIteration
+
     
 line_storage = LineStorage()
 
@@ -84,43 +118,45 @@ def putfile(linelist: list[str]) -> None:
     line_storage.add_lines(linelist)
 
 
-circ_index = None
+circ_index = Index()
 
 
 def cs_setup() -> None:
     global circ_index, line_storage
     
-    circ_index = []
     for idx_line_pair in line_storage:
         line_idx = idx_line_pair.get_index()
         line_obj = idx_line_pair.get_line()
 
         for idx_word_pair in line_obj:
             word_idx = idx_word_pair.get_index()
-            circ_index.append((line_idx, word_idx))
+            circ_index.add(line_idx, word_idx)
 
             
-alph_index = None
+alph_index = Index()
 
 
 def alphabetize() -> None:
     global alph_index, line_storage, circ_index
 
-    def cmp_csline(shift1, shift2) -> bool:
-      def csword(shift, wordno: int, lines: LineStorage) -> str:
-        (lno, first_word_no) = shift
-        line = lines.get_line(lno)
+    def cmp_csline(shift1: LineIdxWordIdxPair, shift2: LineIdxWordIdxPair) -> bool:
+      def csword(shift: LineIdxWordIdxPair, word_idx: int, lines: LineStorage) -> str:
+        line_idx = shift.get_line_idx()
+        first_word_idx = shift.get_word_idx()
+
+        line = lines.get_line(line_idx)
         line_size = line.get_size()
-        shift_idx = ((first_word_no + wordno) % line_size)
+
+        shift_idx = ((first_word_idx + word_idx) % line_size)
         return line.get_word(shift_idx)
     
-      def cswords(shift, lines: LineStorage) -> int:
-        line_idx = shift[0]
+      def cswords(shift: LineIdxWordIdxPair, lines: LineStorage) -> int:
+        line_idx = shift.get_line_idx()
         line = lines.get_line(line_idx)
         return line.get_size()
     
       def cmp(num1: int, num2: int) -> bool:
-        return (num1>num2)-(num1<num2)
+        return (num1 > num2) - (num1 < num2)
     
       lines = line_storage
           
@@ -128,7 +164,7 @@ def alphabetize() -> None:
       nwords2 = cswords(shift2, lines)
       lasti = min(nwords1, nwords2)
           
-      for i in range(lasti+1):
+      for i in range(lasti + 1):
         cword1 = csword(shift1, i, lines)
         cword2 = csword(shift2, i, lines)
           
@@ -138,15 +174,19 @@ def alphabetize() -> None:
       return cmp(nwords1, nwords2)
   
     alph_index = sorted(circ_index, key=functools.cmp_to_key(cmp_csline))
+
     
 def print_all_alph_cs_lines() -> None:
     global alph_index, line_storage
 
-    def csline(shift, lines) -> list[str]:
-        (lno, first_word_no) = shift
-        line = lines.get_line(lno)
-        wrd_cnt = line.get_size()
-        return [line.get_word((i+first_word_no) % wrd_cnt) for i in range(wrd_cnt)]
+    def csline(shift: LineIdxWordIdxPair, lines: LineStorage) -> list[str]:
+        line_idx = shift.get_line_idx()
+        first_word_idx = shift.get_word_idx()
+
+        line = lines.get_line(line_idx)
+        line_size = line.get_size()
+
+        return [line.get_word((i + first_word_idx) % line_size) for i in range(line_size)]
     
     for shift in alph_index:
         print(csline(shift, line_storage))
