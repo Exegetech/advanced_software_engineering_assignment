@@ -409,11 +409,7 @@ print_all_alph_cs_lines()
 Each of the following module:
 - `IndexWordPair`, `IndexLinePair`
 
-  Hides the fact that index and its associated word/line is a tuple. These are helper data structures for `Line` and `LineStorage`
-
-- `IndexLinePair`
-
-  Hides the fact that index and its associated line is a tuple
+  These are helper data structures for `Line` and `LineStorage`.
 
 - `Line`
 
@@ -425,33 +421,214 @@ Each of the following module:
 
 - `LineIdxWordIdxPair`
 
+  Helper data structure for `Index`.
 
+- `Index` 
+
+  Data structure for managing the index.
 
 ## Data-Centric Refactoring: 6.
-<Your answer goes here>
+
+- If we want to change to use persistent storage, then we just need to change the `LineStorage`  class.
+
+- If we want to change the shifts in a byte-packed arrays, we just need to change the `LineIdxWordIdxPair` class. 
 
 # Case Study: Git
 
 ## Worktrees: 1.
-<Your answer goes here>
+
+On `worktree.h` line 8.
+
+```c
+struct worktree {
+	char *path;
+	char *id;
+	char *head_ref;		/* NULL if HEAD is broken or detached */
+	char *lock_reason;	/* internal use */
+	struct object_id head_oid;
+	int is_detached;
+	int is_bare;
+	int is_current;
+	int lock_reason_valid;
+};
+```
 
 ## Worktrees: 2.
-<Your answer goes here>
+
+On `worktree.h` line 32.
+
+```c
+extern struct worktree **get_worktrees(unsigned flags);
+```
 
 ## Worktrees: 3.
-<Your answer goes here>
+
+On `worktree.c`, line 55. 
+
+```c
+is_bare = !strbuf_strip_suffix(&worktree_path, "/.git");
+```
+
+If a directory doesn't have `/.git` then it is considered a bare worktree.
 
 ## Submodules: 1.
-<Your answer goes here>
+
+On `submodule-config.h` line 14.
+
+```c
+struct submodule {
+	const char *path;
+	const char *name;
+	const char *url;
+	int fetch_recurse;
+	const char *ignore;
+	const char *branch;
+	struct submodule_update_strategy update_strategy;
+	/* the object id of the responsible .gitmodules file */
+	struct object_id gitmodules_oid;
+	int recommend_shallow;
+};
+```
 
 ## Submodules: 2.a.
-<Your answer goes here>
+
+In `submodule-config.c` line 663.
+
+```c
+
+const struct submodule *submodule_from_name(struct repository *r,
+					    const struct object_id *treeish_name,
+		const char *name)
+{
+	gitmodules_read_check(r);
+	return config_from(r->submodule_cache, treeish_name, name, lookup_name);
+}
+
+const struct submodule *submodule_from_path(struct repository *r,
+					    const struct object_id *treeish_name,
+		const char *path)
+{
+	gitmodules_read_check(r);
+	return config_from(r->submodule_cache, treeish_name, path, lookup_path);
+}
+```
 
 ## Submodules: 2.b.
-<Your answer goes here>
+
+In `submodule-config.c` line 68.
+
+```c
+static void submodule_cache_init(struct submodule_cache *cache)
+{
+	hashmap_init(&cache->for_path, config_path_cmp, NULL, 0);
+	hashmap_init(&cache->for_name, config_name_cmp, NULL, 0);
+	cache->initialized = 1;
+}
+```
 
 ## Submodules: 2.c.
-<Your answer goes here>
+
+In `submodule-config.c` line 394.
+
+```c
+static int parse_config(const char *var, const char *value, void *data)
+{
+	struct parse_config_parameter *me = data;
+	struct submodule *submodule;
+	struct strbuf name = STRBUF_INIT, item = STRBUF_INIT;
+	int ret = 0;
+
+	/* this also ensures that we only parse submodule entries */
+	if (!name_and_item_from_var(var, &name, &item))
+		return 0;
+
+	submodule = lookup_or_create_by_name(me->cache,
+					     me->gitmodules_oid,
+					     name.buf);
+
+	if (!strcmp(item.buf, "path")) {
+		if (!value)
+			ret = config_error_nonbool(var);
+		else if (!me->overwrite && submodule->path)
+			warn_multiple_config(me->treeish_name, submodule->name,
+					"path");
+		else {
+			if (submodule->path)
+				cache_remove_path(me->cache, submodule);
+			free((void *) submodule->path);
+			submodule->path = xstrdup(value);
+			cache_put_path(me->cache, submodule);
+		}
+	} else if (!strcmp(item.buf, "fetchrecursesubmodules")) {
+		/* when parsing worktree configurations we can die early */
+		int die_on_error = is_null_oid(me->gitmodules_oid);
+		if (!me->overwrite &&
+		    submodule->fetch_recurse != RECURSE_SUBMODULES_NONE)
+			warn_multiple_config(me->treeish_name, submodule->name,
+					"fetchrecursesubmodules");
+		else
+			submodule->fetch_recurse = parse_fetch_recurse(
+								var, value,
+								die_on_error);
+	} else if (!strcmp(item.buf, "ignore")) {
+		if (!value)
+			ret = config_error_nonbool(var);
+		else if (!me->overwrite && submodule->ignore)
+			warn_multiple_config(me->treeish_name, submodule->name,
+					"ignore");
+		else if (strcmp(value, "untracked") &&
+			 strcmp(value, "dirty") &&
+			 strcmp(value, "all") &&
+			 strcmp(value, "none"))
+			warning("Invalid parameter '%s' for config option "
+					"'submodule.%s.ignore'", value, name.buf);
+		else {
+			free((void *) submodule->ignore);
+			submodule->ignore = xstrdup(value);
+		}
+	} else if (!strcmp(item.buf, "url")) {
+		if (!value) {
+			ret = config_error_nonbool(var);
+		} else if (!me->overwrite && submodule->url) {
+			warn_multiple_config(me->treeish_name, submodule->name,
+					"url");
+		} else {
+			free((void *) submodule->url);
+			submodule->url = xstrdup(value);
+		}
+	} else if (!strcmp(item.buf, "update")) {
+		if (!value)
+			ret = config_error_nonbool(var);
+		else if (!me->overwrite &&
+			 submodule->update_strategy.type != SM_UPDATE_UNSPECIFIED)
+			warn_multiple_config(me->treeish_name, submodule->name,
+					     "update");
+		else if (parse_submodule_update_strategy(value,
+			 &submodule->update_strategy) < 0)
+				die(_("invalid value for %s"), var);
+	} else if (!strcmp(item.buf, "shallow")) {
+		if (!me->overwrite && submodule->recommend_shallow != -1)
+			warn_multiple_config(me->treeish_name, submodule->name,
+					     "shallow");
+		else
+			submodule->recommend_shallow =
+				git_config_bool(var, value);
+	} else if (!strcmp(item.buf, "branch")) {
+		if (!me->overwrite && submodule->branch)
+			warn_multiple_config(me->treeish_name, submodule->name,
+					     "branch");
+		else {
+			free((void *)submodule->branch);
+			submodule->branch = xstrdup(value);
+		}
+	}
+
+	strbuf_release(&name);
+	strbuf_release(&item);
+
+	return ret;
+}
+```
 
 ## Submodules: 2.d.
 <Your answer goes here>
@@ -460,10 +637,66 @@ Each of the following module:
 <Your answer goes here>
 
 ## Freestyle: 1.
-<Your answer goes here>
+
+Three questions about internal of git:
+
+- How does `git cherry-pick` work?
+- How does conflict diffing work?
+- How does `git blame` work?
 
 ## Freestyle: 2.
-<Your answer goes here>
+
+Answered below on Freestyle: 3
 
 ## Freestyle: 3.
-<Your answer goes here>
+
+- How does `git cherry-pick` work?
+  - grep for `cherry-pick`
+  - found `git.c` line 457, `cmd_cherry_pick` function
+  - follow the definition to `revert.c` line 218
+    - on `revert.c` line 224, `sequencer_init_config` function
+        - follow the definition to `sequencer.c` line 196
+        - on line 199, `git_config` function, doesn't seem to be anything relevant
+    - on `revert.c` line 225, `run_sequencer` function
+        - follow definition
+        - there seems to be a lot of code here
+  - status: fail
+
+- How does conflict diffing work?
+  - grep for `diff`
+  - seems there are many command for diffing
+    - `cmd_diff_files`
+    - `cmd_diff_index`
+    - `cmd_diff`
+    - `cmd_diff_tree`
+    - `cmd_difftool`
+
+  - decide to see how `cmd_diff_files` works, follow the definition to `diff-files.c` line 18
+  - `diff-files.c` line 72, `run_diff_files` function
+  - follow the definition to `diff-lib.c` line 89
+    - for every entries, it shows
+      - `diff_unmerge` on line 191
+      - `diff_addremove` on line 214
+      - `diff_change` on line 241
+  - defide to see how `diff-change` works, 
+  - looking at the code, there seems to be a lot of low level details 
+  - status: fail
+
+- How does git blame work?
+ - grep for `blame`
+ - on `blame.h` there seems to be 2 relevant structs
+   - `blame_origin` on line 22
+   - `blame_entry` on line 72
+   - on each of those struct, looks like `struct commit *commit` is relevant
+   - look on `init_sccoreboard` `blame.c` line 987, also `setup_scoreboard` line 991, seems relevant because those two receive `*sb` (`blame_scoreboard`), `*o` (`blame_orgin`) and `*ent` (`blame_entry`)
+   - `setup_scoreboard` on line 1769, looking at `get_blame_suspects` line 1842 
+   - there are a lot of code, that seems irrelevant
+ - on `builtin.h` line 136, `cmd_blame` function
+   - follow the definitition
+   - doesn't look like there are relevant code here, looking for something like `author`, `user` or `email`
+ - status: fail
+
+Cause of failures:
+- Often I didn't see any data structure, it seems that a lot of command is operation based (on core git data structure)
+- There are a lot of low level detail that I am not familiar with due to unfamiliarity with C programming and systems engineering
+- Probably would need to debug the commands above during runtime.

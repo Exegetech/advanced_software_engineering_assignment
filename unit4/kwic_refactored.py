@@ -92,7 +92,6 @@ class LineIdxWordIdxPair:
     def get_word_idx(self) -> int:
         return self.word_idx
 
-
 class Index:
     def __init__(self):
         self.storage = []
